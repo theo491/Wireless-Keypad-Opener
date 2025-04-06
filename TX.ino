@@ -1,5 +1,5 @@
 // PROJECT  :Wireless Gate Opener
-// PURPOSE  :To make a wireless access control system that integrates programming, prototyping and design.
+// PURPOSE  :To make a wireless access control system that integrates programming, prototyping and design for the transmitter.
 // COURSE   :ICS3U-E
 // AUTHOR   :T. Park
 // DATE     :2025 06 04
