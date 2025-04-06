@@ -1,3 +1,12 @@
+// PROJECT  :Wireless Keypad
+// PURPOSE  :
+// COURSE   :ICS3U-E
+// AUTHOR   :T. Park
+// DATE     :
+// MCU      :328P (Standalone)
+// STATUS   :Not Working
+// REFRENCE :
+
 #include <SPI.h>
 #include <RF24.h>
 
