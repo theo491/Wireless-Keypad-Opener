@@ -1,133 +1,127 @@
-// PROJECT  :Wireless Keypad
-// PURPOSE  :
+// PROJECT  :Wireless Gate Opener
+// PURPOSE  :To make a wireless access control system that integrates programming, prototyping and design.
 // COURSE   :ICS3U-E
 // AUTHOR   :T. Park
-// DATE     :
+// DATE     :2025 06 04
 // MCU      :328P (Standalone)
-// STATUS   :Not Working
-// REFRENCE :
+// STATUS   :Working
+// REFRENCE :http://darcy.rsgc.on.ca/ACES/TEI3M/2425/ISPs.html#logs
 
-#include <SPI.h>
-#include <RF24.h>
+#include <SPI.h>                                                                                     // SPI library for communication
+#include <RF24.h>                                                                                    // RF24 library for radio
 
-#define DURATION  200
-#define DEBUG     1
+#define RF_CE_PIN         9                                                                          // RF24 CE pin
+#define RF_CSN_PIN        8                                                                          // RF24 CSN pin
 
-RF24 radio(9, 8);  // CE, CSN
-const byte address[6] = "12345";
+#define RED_LED_PIN       4                                                                          // Red LED output pin
+#define GREEN_LED_PIN     5                                                                          // Green LED output pin
 
-uint16_t thresholds[] = {285, 310, 330, 360, 400, 425, 469, 540, 625, 720, 845, 1024};
-char keys[] = { '#', '9', '6', '3', '0', '8', '5', '2', '*', '7', '4', '1' };
+#define INTERRUPT_PIN     3                                                                          // Input pin for interrupt
+#define ANALOG_KEY_PIN    A5                                                                         // Analog pin for keypad
 
-const char correctPassword[4] = {'0', '6', '1', '7'};  // Set your desired password
-char inputPassword[4] = {'\0', '\0', '\0', '\0'};
-int inputIndex = 0;
+#define PASSWORD_LENGTH   4                                                                          // Length of the password
+const char CORRECT_PASSWORD[PASSWORD_LENGTH] = {'0', '6', '1', '7'};                                 // Correct password
 
-volatile bool interruptTriggered = false;  // Flag to indicate interrupt
+#define NUM_KEYS          12                                                                         // Total number of keys
+const uint16_t THRESHOLDS[NUM_KEYS] = {285, 310, 330, 360, 400, 425, 469, 540, 625, 720, 845, 1024}; // ADC thresholds
+const char KEYS[NUM_KEYS] = { '#', '9', '6', '3', '0', '8', '5', '2', '*', '7', '4', '1' };          // Key values
+
+RF24 radio(RF_CE_PIN, RF_CSN_PIN);                                                                   // Create radio object
+const byte ADDRESS[6] = "12345";                                                                     // Pipe address for RF
+
+char inputPassword[PASSWORD_LENGTH] = {'\0', '\0', '\0', '\0'};                                      // User input buffer
+int inputIndex = 0;                                                                                  // Current index for input
+volatile bool interruptTriggered = false;                                                            // Flag for interrupt
 
 void setup() {
-  Serial.begin(9600);
-  while (!Serial);
+  Serial.begin(9600);                                                                                // Start serial communication
+  while (!Serial);                                                                                   // Wait for serial monitor
 
-  if (!radio.begin()) {
-    Serial.println("RF24 module not responding!");
+  if (!radio.begin()) {                                                                              // Try initializing RF24
+    Serial.println("RF24 module not responding!");                                                   // Error message
   } else {
-    Serial.println("RF24 module responding!");
+    Serial.println("RF24 module responding!");                                                       // Success message
   }
-  radio.begin();
-  radio.openWritingPipe(address);
-  radio.setPALevel(RF24_PA_MIN);
-  radio.setDataRate(RF24_1MBPS);
-  radio.stopListening();
 
-  // LEDs for feedback
-  pinMode(4, OUTPUT);  // Red LED (incorrect password)
-  pinMode(5, OUTPUT);  // Green LED (correct password)
-  pinMode(3, INPUT);   // Interrupt pin (D6)
+  radio.openWritingPipe(ADDRESS);                                                                    // Set up RF writing pipe
+  radio.setPALevel(RF24_PA_MIN);                                                                     // Set low power level
+  radio.setDataRate(RF24_1MBPS);                                                                     // Set RF data rate
+  radio.stopListening();                                                                             // Set to transmit mode
 
-  // Ensure all LEDs are off initially
-  digitalWrite(4, LOW);  // Red LED off
-  digitalWrite(5, LOW);  // Green LED off
+  pinMode(RED_LED_PIN, OUTPUT);                                                                      // Set red LED as output
+  pinMode(GREEN_LED_PIN, OUTPUT);                                                                    // Set green LED as output
+  pinMode(INTERRUPT_PIN, INPUT);                                                                     // Set interrupt pin as input
 
-  // Attach interrupt to D6 (pin 6)
-  attachInterrupt(digitalPinToInterrupt(3), handleInterrupt, RISING);
+  digitalWrite(RED_LED_PIN, LOW);                                                                    // Turn off red LED
+  digitalWrite(GREEN_LED_PIN, LOW);                                                                  // Turn off green LED
+
+  attachInterrupt(digitalPinToInterrupt(INTERRUPT_PIN), handleInterrupt, RISING);                    // Attach interrupt
 }
 
 void handleInterrupt() {
-  interruptTriggered = true;  // Set the flag to indicate the interrupt occurred
+  interruptTriggered = true;                                                                         // Set interrupt flag
 }
 
 char getKey() {
-  uint16_t value = 0;
+  uint16_t value = 0;                                                                                // Initialize analog value
 
-  // Wait for interrupt to trigger analog read instead of using delay
-  if (interruptTriggered) {
-    value = analogRead(A5);  // Analog read on pin A5
-    interruptTriggered = false;  // Reset the interrupt flag
+  if (interruptTriggered) {                                                                          // If interrupt occurred
+    value = analogRead(ANALOG_KEY_PIN);                                                              // Read keypad input
+    interruptTriggered = false;                                                                      // Reset the flag
   }
 
-  char ch = '?';
-  int numKeys = sizeof(keys) / sizeof(keys[0]);
+  char ch = '?';                                                                                     // Default unknown key
 
-  // Check the thresholds and map value to corresponding key
-  for (int i = 0; i < numKeys; i++) {
-    if (i == 0 && value < thresholds[i]) {
-      ch = keys[i];
+  for (int i = 0; i < NUM_KEYS; i++) {                                                               // Iterate through all keys
+    if (i == 0 && value < THRESHOLDS[i]) {
+      ch = KEYS[i];                                                                                  // Match first threshold
       break;
-    } 
-    else if (i == numKeys - 1 || value >= thresholds[i]) {
-      ch = keys[i];
-    } 
-    else if (value >= thresholds[i - 1] && value < thresholds[i]) {
-      ch = keys[i];
+    } else if (i == NUM_KEYS - 1 || value >= THRESHOLDS[i]) {
+      ch = KEYS[i];                                                                                  // Match last or above threshold
+    } else if (value >= THRESHOLDS[i - 1] && value < THRESHOLDS[i]) {
+      ch = KEYS[i];                                                                                  // Match in between thresholds
       break;
     }
   }
-  return ch;
+  return ch;                                                                                         // Return detected key
 }
 
 void checkPassword() {
-  bool correct = true;
-  for (int i = 0; i < 4; i++) {
-    if (inputPassword[i] != correctPassword[i]) {
-      correct = false;
+  bool correct = true;                                                                               // Assume password correct
+
+  for (int i = 0; i < PASSWORD_LENGTH; i++) {
+    if (inputPassword[i] != CORRECT_PASSWORD[i]) {
+      correct = false;                                                                               // Mismatch found
       break;
     }
   }
 
-  if (correct) {
-    digitalWrite(5, HIGH);  // Green LED ON (if correct)
-    digitalWrite(4, LOW);   // Red LED OFF
-  } else {
-    digitalWrite(5, LOW);   // Green LED OFF
-    digitalWrite(4, HIGH);  // Red LED ON (if incorrect)
-  }
+  digitalWrite(GREEN_LED_PIN, correct ? HIGH : LOW);                                                 // Green for correct
+  digitalWrite(RED_LED_PIN, correct ? LOW : HIGH);                                                   // Red for incorrect
 
   if (radio.write(&correct, sizeof(correct))) {
-    Serial.println("MSG SENT");
+    Serial.println("MSG SENT");                                                                      // Radio sent successfully
   } else {
-    Serial.println("MSG NOT SENT");
+    Serial.println("MSG NOT SENT");                                                                  // Radio send failed
   }
 
-  // Reset input and indicator
-  inputIndex = 0;
-  memset(inputPassword, '\0', 4);
+  inputIndex = 0;                                                                                    // Reset input index
+  memset(inputPassword, '\0', PASSWORD_LENGTH);                                                      // Clear input buffer
 }
 
 void loop() {
-  char ch = getKey();
-  
-  // Only register numeric inputs ('0' to '9')
-  if (ch >= '0' && ch <= '9') {
-    Serial.println(ch);
+  char ch = getKey();                                                                                 // Get key press
 
-    if (inputIndex < 4) {
-      inputPassword[inputIndex] = ch;
-      inputIndex++;
+  if (ch >= '0' && ch <= '9') {                                                                       // If valid number key
+    Serial.println(ch);                                                                               // Print key to serial
+                                                                       
+    if (inputIndex < PASSWORD_LENGTH) {
+      inputPassword[inputIndex] = ch;                                                                 // Store key
+      inputIndex++;                                                                                   // Increment input index
     }
 
-    if (inputIndex == 4) {
-      checkPassword();
+    if (inputIndex == PASSWORD_LENGTH) {
+      checkPassword();                                                                                // Check entered password
     }
   }
 }
